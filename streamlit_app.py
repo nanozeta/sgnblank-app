@@ -6,6 +6,8 @@ import plotly.graph_objects as go
 import subprocess
 import os
 from pathlib import Path
+from datetime import datetime
+import time
 
 st.set_page_config(page_title="Dashboard Karyawan", layout="wide")
 st.title("📊 Dashboard Rekapitulasi Karyawan")
@@ -58,6 +60,22 @@ def push_to_github(file_path, commit_message="Update database"):
             return False, f"❌ Error push: {push_result.stderr}"
     except Exception as e:
         return False, f"❌ Error: {str(e)}"
+
+# Dapatkan waktu last update dari GitHub
+def get_last_update_time():
+    try:
+        response = requests.head(DEFAULT_URL)
+        if 'last-modified' in response.headers:
+            # Parse last-modified header (format: Wed, 05 Feb 2026 09:42:38 GMT)
+            last_mod_str = response.headers['last-modified']
+            # Konversi ke datetime
+            from email.utils import parsedate_to_datetime
+            last_mod = parsedate_to_datetime(last_mod_str)
+            return last_mod.strftime("%d-%m-%Y %H:%M:%S")
+        else:
+            return "Tidak tersedia"
+    except Exception as e:
+        return "Gagal mengambil info"
 
 # Load data
 df, error = load_excel_data(DEFAULT_URL)
@@ -169,8 +187,6 @@ else:
         st.metric("👨 Male", male_count)
     with gcol2:
         st.metric("👩 Female", female_count)
-    with gcol3:
-        st.metric("❓ Lainnya", other_gender)
 
     # Hitung rekap usia
     if 'Age of employee' in df_filtered.columns:
@@ -201,7 +217,6 @@ else:
         display_df = display_df.rename(columns={
             'Employee Group': 'KATEGORI KARYAWAN',
             'Jumlah': 'JUMLAH',
-            'Approved_JG11': 'JG11_DISETUJUI'
         })
 
         st.dataframe(
@@ -252,7 +267,6 @@ else:
     all_categories_df = all_categories_df.rename(columns={
         'Employee Group': 'KATEGORI',
         'Jumlah': 'JUMLAH',
-        'Approved_JG11': 'JG11_DISETUJUI'
     })
 
     st.dataframe(
@@ -262,7 +276,6 @@ else:
         column_config={
             "KATEGORI": st.column_config.TextColumn(width=300),
             "JUMLAH": st.column_config.NumberColumn(width=120),
-            "JG11_DISETUJUI": st.column_config.NumberColumn(width=120)
         }
     )
     
@@ -289,21 +302,25 @@ else:
     if available_columns:
         employee_df = df_filtered[available_columns].copy()
         
+        # Format kolom Birth date ke DD/MM/YYYY
+        if 'Birth date' in employee_df.columns:
+            employee_df['Birth date'] = pd.to_datetime(employee_df['Birth date'], errors='coerce').dt.strftime('%d/%m/%Y')
+        
         # Convert semua kolom ke string untuk menghindari error Arrow conversion
         for col in employee_df.columns:
             employee_df[col] = employee_df[col].astype(str)
         
         # Rename kolom untuk tampilan yang lebih baik
         column_display_names = {
-            'Pers.No.': 'PERS. NO',
-            'Personnel Number': 'NAMA',
-            'Position': 'POSISI',
-            'Personel Subarea': 'UNIT KERJA',
+            'Pers.No.': 'NIK SAP',
+            'Personnel Number': 'Nama Karyawan',
+            'Position': 'Jabatan',
+            'Personel Subarea': 'Unit Kerja',
             'Birth date': 'TGL LAHIR',
-            'Age of employee': 'USIA',
-            'Gender Key': 'GENDER',
-            'ESgrp': 'SUBGROUP',
-            'Job Group Short (New)': 'JOB GROUP'
+            'Age of employee': 'Usia',
+            'Gender Key': 'Jenis Kelamin',
+            'ESgrp': 'Person Grade',
+            'Job Group Short (New)': 'BOD Level'
         }
         
         employee_df = employee_df.rename(columns={k: v for k, v in column_display_names.items() if k in employee_df.columns})
@@ -328,6 +345,18 @@ else:
 # ==================== SECTION UPLOAD & MANAGE DATABASE ====================
 st.divider()
 st.header("📥 Kelola Database")
+
+# Tampilkan waktu last update
+st.subheader("📅 Status Last Update")
+last_update = get_last_update_time()
+col_status, col_refresh_time = st.columns([2, 1])
+with col_status:
+    st.info(f"⏰ Terakhir di-update: **{last_update}**")
+with col_refresh_time:
+    if st.button("🔄 Refresh Info", use_container_width=True, key="refresh_time_btn"):
+        st.rerun()
+
+st.divider()
 
 st.subheader("Unggah File Baru")
 uploaded_file = st.file_uploader(
@@ -354,11 +383,25 @@ if uploaded_file is not None:
                 
                 # Push ke GitHub
                 success, message = push_to_github(file_path, "Update database via upload")
+                
                 if success:
-                    st.success(message)
-                    # Clear cache untuk reload data baru
-                    st.cache_data.clear()
-                    st.rerun()
+                    # Tampilkan success popup
+                    st.balloons()
+                    success_container = st.container()
+                    with success_container:
+                        st.success("✅ Database berhasil diperbarui!")
+                        st.write("Kolom baru telah ditambahkan. Dashboard akan otomatis refresh dalam 3 detik...")
+                        
+                        # Progress bar
+                        progress_bar = st.progress(0)
+                        for i in range(3):
+                            time.sleep(1)
+                            progress_bar.progress((i + 1) / 3)
+                        
+                        # Clear cache dan rerun
+                        st.cache_data.clear()
+                        time.sleep(0.5)
+                        st.rerun()
                 else:
                     st.error(message)
     except Exception as e:
