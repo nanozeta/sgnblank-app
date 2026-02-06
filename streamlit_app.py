@@ -63,7 +63,10 @@ def get_sheet_names(url):
 # Push file ke GitHub
 def push_to_github(file_path, commit_message="Update database"):
     try:
-        os.chdir(REPO_PATH)
+        # Tentukan working directory (adaptif untuk local & cloud)
+        work_dir = REPO_PATH if os.path.exists(REPO_PATH) else "."
+        os.chdir(work_dir)
+        
         subprocess.run(["git", "config", "--global", "user.email", "bot@streamlit.app"], check=False)
         subprocess.run(["git", "config", "--global", "user.name", "Streamlit Bot"], check=False)
         subprocess.run(["git", "add", LOCAL_FILE], check=True, capture_output=True)
@@ -73,6 +76,8 @@ def push_to_github(file_path, commit_message="Update database"):
             return True, "✅ File berhasil di-push ke GitHub!"
         else:
             return False, f"❌ Error push: {push_result.stderr}"
+    except FileNotFoundError:
+        return False, "❌ Git tidak tersedia atau direktori workspace tidak ditemukan"
     except Exception as e:
         return False, f"❌ Error: {str(e)}"
 
@@ -535,38 +540,49 @@ if uploaded_file is not None:
         col_confirm, col_cancel = st.columns([1, 1])
         with col_confirm:
             if st.button("💾 Simpan & Push ke GitHub", use_container_width=True, type="primary"):
-                # Simpan file lokal
-                file_path = os.path.join(REPO_PATH, LOCAL_FILE)
-                with open(file_path, "wb") as f:
-                    f.write(uploaded_file.getbuffer())
-                
-                # Push ke GitHub
-                success, message = push_to_github(file_path, "Update database via upload")
-                
-                if success:
-                    # Tampilkan success popup
-                    st.balloons()
-                    success_container = st.container()
-                    with success_container:
-                        st.success("✅ Database berhasil diperbarui!")
-                        st.write("Kolom baru telah ditambahkan. Dashboard akan otomatis refresh dalam 3 detik...")
-                        
-                        # Progress bar
-                        progress_bar = st.progress(0)
-                        for i in range(3):
-                            time.sleep(1)
-                            progress_bar.progress((i + 1) / 3)
-                        
-                        # Clear cache dan rerun
-                        st.cache_data.clear()
-                        time.sleep(0.5)
-                        st.rerun()
-                else:
-                    st.error(message)
+                try:
+                    # Tentukan path untuk simpan file (adaptif untuk local & cloud)
+                    file_path = os.path.join(REPO_PATH, LOCAL_FILE)
+                    
+                    # Cek apakah direktori ada, jika tidak gunakan current directory
+                    if not os.path.exists(REPO_PATH):
+                        file_path = LOCAL_FILE
+                        st.warning("⚠️ Workspace path tidak tersedia, using current directory")
+                    
+                    # Simpan file
+                    with open(file_path, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
+                    
+                    st.success(f"✅ File disimpan ke: {file_path}")
+                    
+                    # Push ke GitHub
+                    success, message = push_to_github(file_path, "Update database via upload")
+                    
+                    if success:
+                        # Tampilkan success popup
+                        st.balloons()
+                        success_container = st.container()
+                        with success_container:
+                            st.success("✅ Database berhasil diperbarui!")
+                            st.write("Kolom baru telah ditambahkan. Dashboard akan otomatis refresh dalam 3 detik...")
+                            
+                            # Progress bar
+                            progress_bar = st.progress(0)
+                            for i in range(3):
+                                time.sleep(1)
+                                progress_bar.progress((i + 1) / 3)
+                            
+                            # Clear cache dan rerun
+                            st.cache_data.clear()
+                            time.sleep(0.5)
+                            st.rerun()
+                    else:
+                        st.error(message)
+                except Exception as e:
+                    st.error(f"❌ Error membaca/menyimpan file: {str(e)}")
     except Exception as e:
         st.error(f"❌ Error membaca file: {str(e)}")
 
-# Upload Struktur Organisasi
 st.divider()
 st.subheader("📊 Unggah File Struktur Organisasi")
 st.write("Upload file Excel berisi struktur organisasi (PN, Nama, Jabatan, Bagian, dll)")
@@ -589,21 +605,25 @@ if uploaded_org_file is not None:
         col_org_confirm, col_org_cancel = st.columns([1, 1])
         with col_org_confirm:
             if st.button("💾 Simpan & Push Struktur Organisasi ke GitHub", use_container_width=True, type="primary", key="save_org_btn"):
-                # Simpan file lokal
-                file_path = os.path.join(REPO_PATH, ORG_STRUCTURE_FILE)
-                with open(file_path, "wb") as f:
-                    f.write(uploaded_org_file.getbuffer())
-                
-                # Push ke GitHub
                 try:
-                    os.chdir(REPO_PATH)
-                    subprocess.run(["git", "config", "--global", "user.email", "bot@streamlit.app"], check=False)
-                    subprocess.run(["git", "config", "--global", "user.name", "Streamlit Bot"], check=False)
-                    subprocess.run(["git", "add", ORG_STRUCTURE_FILE], check=True, capture_output=True)
-                    result = subprocess.run(["git", "commit", "-m", "Update struktur organisasi"], capture_output=True, text=True)
-                    push_result = subprocess.run(["git", "push", "origin", "main"], capture_output=True, text=True)
+                    # Tentukan path untuk simpan file (adaptif untuk local & cloud)
+                    file_path = os.path.join(REPO_PATH, ORG_STRUCTURE_FILE)
                     
-                    if push_result.returncode == 0:
+                    # Cek apakah direktori ada, jika tidak gunakan current directory
+                    if not os.path.exists(REPO_PATH):
+                        file_path = ORG_STRUCTURE_FILE
+                        st.warning("⚠️ Workspace path tidak tersedia, using current directory")
+                    
+                    # Simpan file
+                    with open(file_path, "wb") as f:
+                        f.write(uploaded_org_file.getbuffer())
+                    
+                    st.success(f"✅ File disimpan ke: {file_path}")
+                    
+                    # Push ke GitHub
+                    success, message = push_to_github(file_path, "Update struktur organisasi")
+                    
+                    if success:
                         st.balloons()
                         st.success("✅ Struktur Organisasi berhasil diperbarui!")
                         st.write("Dashboard akan otomatis refresh dalam 3 detik...")
@@ -619,9 +639,9 @@ if uploaded_org_file is not None:
                         time.sleep(0.5)
                         st.rerun()
                     else:
-                        st.error(f"❌ Error push: {push_result.stderr}")
+                        st.error(message)
                 except Exception as e:
-                    st.error(f"❌ Error: {str(e)}")
+                    st.error(f"❌ Error menyimpan/push file: {str(e)}")
     except Exception as e:
         st.error(f"❌ Error membaca file: {str(e)}")
 
