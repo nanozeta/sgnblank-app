@@ -252,9 +252,6 @@ else:
         })
 
         st.dataframe(
-        col_upload, col_update_time = st.columns([4, 1])
-        with col_upload:
-            st.subheader("Unggah File Baru")
             display_df,
             width='stretch',
             hide_index=True,
@@ -278,17 +275,7 @@ else:
                 ),
                 text=summary_df['Jumlah'],
                 textposition='auto',
-                        # Preview data dari file yang diupload
-                        st.write("Upload file Excel berisi struktur organisasi (PN, Nama, Jabatan, Bagian, dll)")
-                        last_update_raw = get_last_update_time()
-                        try:
-                            dt = datetime.strptime(last_update_raw, "%d-%m-%Y %H:%M:%S")
-                            last_update_fmt = dt.strftime("%d/%m/%y %H:%M")
-                        except Exception:
-                            last_update_fmt = last_update_raw
-                        st.caption(f"⏰ {last_update_fmt}")
-        
-                        st.write("**Preview Data Uploaded File:**")
+            )
         ])
         
         fig.update_layout(
