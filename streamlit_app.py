@@ -47,19 +47,6 @@ def load_all_sheets(url):
     except Exception as e:
         return None, str(e)
 
-# Get sheet names dari Excel file
-@st.cache_data(ttl=3600)
-def get_sheet_names(url):
-    try:
-        response = requests.get(url)
-        if response.status_code == 200:
-            xls = pd.ExcelFile(BytesIO(response.content))
-            return xls.sheet_names, None
-        else:
-            return None, f"Error: Status code {response.status_code}"
-    except Exception as e:
-        return None, str(e)
-
 # Push file ke GitHub
 def push_to_github(file_path, commit_message="Update database"):
     try:
