@@ -15,6 +15,8 @@ st.title("📊 Dashboard Rekapitulasi Karyawan")
 # URL default
 DEFAULT_URL = "https://github.com/nanozeta/sgnblank-app/raw/refs/heads/main/Cek%20Test%20Profile.xlsx"
 LOCAL_FILE = "Cek Test Profile.xlsx"
+ORG_STRUCTURE_FILE = "Struktur Organisasi.xlsx"
+ORG_STRUCTURE_URL = f"https://github.com/nanozeta/sgnblank-app/raw/refs/heads/main/{ORG_STRUCTURE_FILE.replace(' ', '%20')}"
 REPO_PATH = "/workspaces/sgnblank-app"
 
 # Auto load data dengan support untuk multiple sheets
@@ -76,6 +78,19 @@ def get_last_update_time():
             return "Tidak tersedia"
     except Exception as e:
         return "Gagal mengambil info"
+
+# Load org structure
+@st.cache_data(ttl=3600)
+def load_org_structure(url):
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            df = pd.read_excel(BytesIO(response.content), sheet_name=0)
+            return df, None
+        else:
+            return None, f"File tidak ditemukan (Status: {response.status_code})"
+    except Exception as e:
+        return None, str(e)
 
 # Load data
 df, error = load_excel_data(DEFAULT_URL)
@@ -343,6 +358,103 @@ else:
     # Info terakhir
     st.info(f"✅ Menampilkan data {display_unit} | Data otomatis di-update setiap jam dari: {DEFAULT_URL}")
 
+# ==================== SECTION STRUKTUR ORGANISASI ====================
+st.divider()
+st.header("🏛️ Struktur Organisasi")
+
+# Load organisasi structure
+org_df, org_error = load_org_structure(ORG_STRUCTURE_URL)
+
+if org_error:
+    st.info(f"ℹ️ File Struktur Organisasi belum tersedia: {org_error}")
+    st.write("Upload file Excel dengan struktur organisasi untuk melihat tampilan ini.")
+else:
+    # Filter berdasarkan unit yang sama dengan yang dipilih di atas
+    if 'Unit' in org_df.columns or 'unit' in org_df.columns:
+        unit_col = 'Unit' if 'Unit' in org_df.columns else 'unit'
+        org_units = sorted(org_df[unit_col].unique().tolist())
+        
+        selected_org_unit = st.selectbox(
+            "Pilih Unit untuk Struktur Organisasi:",
+            options=org_units,
+            index=0,
+            help="Pilih unit untuk melihat struktur organisasi dan posisi vacant"
+        )
+        
+        # Filter org data berdasarkan unit
+        org_unit_df = org_df[org_df[unit_col] == selected_org_unit].copy()
+        
+        st.subheader(f"📋 Struktur Organisasi - {selected_org_unit}")
+        
+        # Identifikasi kolom untuk PN dan Nama
+        pn_col = next((col for col in org_unit_df.columns if 'PN' in col.upper() or 'PERSONEL' in col.upper()), None)
+        nama_col = next((col for col in org_unit_df.columns if 'NAMA' in col.upper()), None)
+        
+        if pn_col and nama_col:
+            # Tentukan status: Vacant atau Terisi
+            org_unit_df['STATUS'] = org_unit_df.apply(
+                lambda x: '🔴 VACANT' if (pd.isna(x[pn_col]) or str(x[pn_col]).strip() == '' or 
+                                         pd.isna(x[nama_col]) or str(x[nama_col]).strip() == '') else '🟢 TERISI',
+                axis=1
+            )
+            
+            # Hitung statistik
+            vacant_count = (org_unit_df['STATUS'] == '🔴 VACANT').sum()
+            terisi_count = (org_unit_df['STATUS'] == '🟢 TERISI').sum()
+            total_posisi = len(org_unit_df)
+            
+            # Metrics
+            col_vacant, col_terisi, col_total = st.columns(3)
+            with col_vacant:
+                st.metric("🔴 Posisi Vacant", vacant_count)
+            with col_terisi:
+                st.metric("🟢 Posisi Terisi", terisi_count)
+            with col_total:
+                st.metric("📊 Total Posisi", total_posisi)
+            
+            st.divider()
+            
+            # Tentukan kolom untuk ditampilkan
+            display_cols_mapping = {
+                'Level Jabatan': ['LEVEL', 'LEVEL JABATAN', 'BOD LEVEL', 'BOD'],
+                'Jabatan': ['JABATAN', 'POSITION'],
+                'Bagian': ['BAGIAN', 'DEPARTMENT', 'DEPT'],
+                'Keterangan': ['KETERANGAN', 'REMARKS', 'NOTE']
+            }
+            
+            display_cols = [pn_col, nama_col, 'STATUS']
+            
+            for display_name, col_variations in display_cols_mapping.items():
+                matching_col = next((col for col in org_unit_df.columns if col.upper() in col_variations), None)
+                if matching_col:
+                    display_cols.append(matching_col)
+            
+            # Filter kolom yang ada
+            available_display_cols = [col for col in display_cols if col in org_unit_df.columns]
+            display_org_df = org_unit_df[available_display_cols].copy()
+            
+            # Rename kolom untuk tampilan better
+            rename_map = {
+                pn_col: 'PN',
+                nama_col: 'NAMA'
+            }
+            display_org_df = display_org_df.rename(columns=rename_map)
+            
+            # Tambahkan conditional formatting info
+            st.dataframe(
+                display_org_df,
+                width='stretch',
+                hide_index=True,
+                use_container_width=True
+            )
+            
+            # Highlight vacant positions
+            st.info("💡 **Indikator:**\n- 🟢 TERISI = Posisi sudah ada yang mengisi (ada PN dan Nama)\n- 🔴 VACANT = Posisi masih kosong (PN atau Nama kosong)")
+        else:
+            st.warning("⚠️ Struktur file tidak sesuai. File harus memiliki kolom PN/Personel Number dan NAMA")
+    else:
+        st.warning("⚠️ File struktur organisasi harus memiliki kolom 'Unit'")
+
 # ==================== SECTION UPLOAD & MANAGE DATABASE ====================
 st.divider()
 st.header("📥 Kelola Database")
@@ -408,7 +520,65 @@ if uploaded_file is not None:
     except Exception as e:
         st.error(f"❌ Error membaca file: {str(e)}")
 
-# Form untuk download template
+# Upload Struktur Organisasi
+st.divider()
+st.subheader("📊 Unggah File Struktur Organisasi")
+st.write("Upload file Excel berisi struktur organisasi (PN, Nama, Jabatan, Bagian, dll)")
+
+uploaded_org_file = st.file_uploader(
+    "Unggah file Excel (.xlsx) untuk struktur organisasi",
+    type=["xlsx"],
+    help="File harus memiliki kolom: Unit, PN, NAMA, Level Jabatan, Jabatan, Bagian",
+    key="org_file_uploader"
+)
+
+if uploaded_org_file is not None:
+    try:
+        # Preview data dari file yang diupload
+        st.write("**Preview Data Struktur Organisasi:**")
+        preview_org_df = pd.read_excel(uploaded_org_file, nrows=5)
+        st.dataframe(preview_org_df, use_container_width=True)
+        
+        # Button untuk simpan
+        col_org_confirm, col_org_cancel = st.columns([1, 1])
+        with col_org_confirm:
+            if st.button("💾 Simpan & Push Struktur Organisasi ke GitHub", use_container_width=True, type="primary", key="save_org_btn"):
+                # Simpan file lokal
+                file_path = os.path.join(REPO_PATH, ORG_STRUCTURE_FILE)
+                with open(file_path, "wb") as f:
+                    f.write(uploaded_org_file.getbuffer())
+                
+                # Push ke GitHub
+                try:
+                    os.chdir(REPO_PATH)
+                    subprocess.run(["git", "config", "--global", "user.email", "bot@streamlit.app"], check=False)
+                    subprocess.run(["git", "config", "--global", "user.name", "Streamlit Bot"], check=False)
+                    subprocess.run(["git", "add", ORG_STRUCTURE_FILE], check=True, capture_output=True)
+                    result = subprocess.run(["git", "commit", "-m", "Update struktur organisasi"], capture_output=True, text=True)
+                    push_result = subprocess.run(["git", "push", "origin", "main"], capture_output=True, text=True)
+                    
+                    if push_result.returncode == 0:
+                        st.balloons()
+                        st.success("✅ Struktur Organisasi berhasil diperbarui!")
+                        st.write("Dashboard akan otomatis refresh dalam 3 detik...")
+                        
+                        # Progress bar
+                        progress_bar = st.progress(0)
+                        for i in range(3):
+                            time.sleep(1)
+                            progress_bar.progress((i + 1) / 3)
+                        
+                        # Clear cache dan rerun
+                        st.cache_data.clear()
+                        time.sleep(0.5)
+                        st.rerun()
+                    else:
+                        st.error(f"❌ Error push: {push_result.stderr}")
+                except Exception as e:
+                    st.error(f"❌ Error: {str(e)}")
+    except Exception as e:
+        st.error(f"❌ Error membaca file: {str(e)}")
+
 st.divider()
 st.subheader("📄 Download Template")
 st.write("Unduh template Excel untuk referensi struktur kolom:")
