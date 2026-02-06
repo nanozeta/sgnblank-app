@@ -214,6 +214,7 @@ else:
         # Tampilkan tabel
         display_df = summary_df.copy()
         display_df['Employee Group'] = display_df['Employee Group'].str.upper()
+        display_df = display_df.drop(columns=['Approved_JG11'], errors='ignore')
         display_df = display_df.rename(columns={
             'Employee Group': 'KATEGORI KARYAWAN',
             'Jumlah': 'JUMLAH',
@@ -225,8 +226,7 @@ else:
             hide_index=True,
             column_config={
                 "KATEGORI KARYAWAN": st.column_config.TextColumn(width=300),
-                "JUMLAH": st.column_config.NumberColumn(width=120),
-                "JG11_DISETUJUI": st.column_config.NumberColumn(width=120)
+                "JUMLAH": st.column_config.NumberColumn(width=120)
             }
         )
         
@@ -264,6 +264,7 @@ else:
     st.subheader("📑 Semua Kategori Karyawan")
     
     all_categories_df = count_by_group.copy()
+    all_categories_df = all_categories_df.drop(columns=['Approved_JG11'], errors='ignore')
     all_categories_df = all_categories_df.rename(columns={
         'Employee Group': 'KATEGORI',
         'Jumlah': 'JUMLAH',
@@ -275,7 +276,7 @@ else:
         hide_index=True,
         column_config={
             "KATEGORI": st.column_config.TextColumn(width=300),
-            "JUMLAH": st.column_config.NumberColumn(width=120),
+            "JUMLAH": st.column_config.NumberColumn(width=120)
         }
     )
     
