@@ -84,14 +84,16 @@ def get_last_update_time():
     except Exception as e:
         return "Gagal mengambil info"
 
-# Load org structure
+
+# Load all sheets from Struktur Organisasi.xlsx
 @st.cache_data(ttl=3600)
-def load_org_structure(url):
+def load_org_sheets(url):
     try:
         response = requests.get(url)
         if response.status_code == 200:
-            df = pd.read_excel(BytesIO(response.content), sheet_name=0)
-            return df, None
+            xls = pd.ExcelFile(BytesIO(response.content))
+            sheets = {sheet: pd.read_excel(BytesIO(response.content), sheet_name=sheet) for sheet in xls.sheet_names}
+            return sheets, None
         else:
             return None, f"File tidak ditemukan (Status: {response.status_code})"
     except Exception as e:
@@ -383,58 +385,73 @@ else:
 st.divider()
 st.header("🏛️ Struktur Organisasi")
 
-# Load organisasi structure
-org_df, org_error = load_org_structure(ORG_STRUCTURE_URL)
 
-if org_error:
-    st.info(f"ℹ️ File Struktur Organisasi belum tersedia: {org_error}")
-    st.write("Upload file Excel dengan struktur organisasi untuk melihat tampilan ini.")
+# Load all sheets (struktur organisasi & database vacant)
+org_sheets, org_error = load_org_sheets(ORG_STRUCTURE_URL)
+
+if org_error or 'struktur organisasi' not in [s.lower() for s in org_sheets.keys()] or 'database vacant' not in [s.lower() for s in org_sheets.keys()]:
+    st.info(f"ℹ️ File Struktur Organisasi belum tersedia atau sheet tidak lengkap: {org_error}")
+    st.write("Upload file Excel dengan sheet 'Struktur Organisasi' dan 'Database Vacant' untuk melihat tampilan ini.")
 else:
+    # Ambil sheet sesuai nama (case-insensitive)
+    org_sheet_name = next(s for s in org_sheets.keys() if s.lower() == 'struktur organisasi')
+    vacant_sheet_name = next(s for s in org_sheets.keys() if s.lower() == 'database vacant')
+    org_df = org_sheets[org_sheet_name]
+    vacant_df = org_sheets[vacant_sheet_name]
+
     # Filter berdasarkan unit yang sama dengan yang dipilih di atas
     if 'Unit' in org_df.columns or 'unit' in org_df.columns:
         unit_col = 'Unit' if 'Unit' in org_df.columns else 'unit'
         org_units = sorted(org_df[unit_col].unique().tolist())
-        
         selected_org_unit = st.selectbox(
             "Pilih Unit untuk Struktur Organisasi:",
             options=org_units,
             index=0,
             help="Pilih unit untuk melihat struktur organisasi dan posisi vacant"
         )
-        
-        # Filter org data berdasarkan unit
         org_unit_df = org_df[org_df[unit_col] == selected_org_unit].copy()
-        
         st.subheader(f"📋 Struktur Organisasi - {selected_org_unit}")
-        
+
         # Identifikasi kolom untuk PN dan Nama
         pn_col = next((col for col in org_unit_df.columns if 'PN' in col.upper() or 'PERSONEL' in col.upper()), None)
         nama_col = next((col for col in org_unit_df.columns if 'NAMA' in col.upper()), None)
-        
-        if pn_col and nama_col:
-            # Tentukan status: Vacant atau Terisi
-            org_unit_df['STATUS'] = org_unit_df.apply(
-                lambda x: '🔴 VACANT' if (pd.isna(x[pn_col]) or str(x[pn_col]).strip() == '' or 
-                                         pd.isna(x[nama_col]) or str(x[nama_col]).strip() == '') else '🟢 TERISI',
-                axis=1
-            )
-            
+        jabatan_col = next((col for col in org_unit_df.columns if 'JABATAN' in col.upper() or 'POSITION' in col.upper()), None)
+
+        # Siapkan set jabatan vacant dari database vacant
+        vacant_jabatan_set = set()
+        if jabatan_col and jabatan_col in vacant_df.columns:
+            vacant_jabatan_set = set(vacant_df[jabatan_col].dropna().astype(str).str.strip().str.upper())
+
+        if pn_col and nama_col and jabatan_col:
+            # Tentukan status: Vacant (by jabatan) atau Terisi
+            def status_row(x):
+                jabatan_val = str(x[jabatan_col]).strip().upper()
+                if jabatan_val in vacant_jabatan_set:
+                    return '🔴 VACANT (DB)'
+                if pd.isna(x[pn_col]) or str(x[pn_col]).strip() == '' or pd.isna(x[nama_col]) or str(x[nama_col]).strip() == '':
+                    return '🔴 VACANT'
+                return '🟢 TERISI'
+            org_unit_df['STATUS'] = org_unit_df.apply(status_row, axis=1)
+
             # Hitung statistik
+            vacant_db_count = (org_unit_df['STATUS'] == '🔴 VACANT (DB)').sum()
             vacant_count = (org_unit_df['STATUS'] == '🔴 VACANT').sum()
             terisi_count = (org_unit_df['STATUS'] == '🟢 TERISI').sum()
             total_posisi = len(org_unit_df)
-            
+
             # Metrics
-            col_vacant, col_terisi, col_total = st.columns(3)
+            col_vacant_db, col_vacant, col_terisi, col_total = st.columns(4)
+            with col_vacant_db:
+                st.metric("🔴 Vacant (DB)", vacant_db_count)
             with col_vacant:
-                st.metric("🔴 Posisi Vacant", vacant_count)
+                st.metric("🔴 Vacant (Kosong)", vacant_count)
             with col_terisi:
-                st.metric("🟢 Posisi Terisi", terisi_count)
+                st.metric("🟢 Terisi", terisi_count)
             with col_total:
                 st.metric("📊 Total Posisi", total_posisi)
-            
+
             st.divider()
-            
+
             # Tentukan kolom untuk ditampilkan
             display_cols_mapping = {
                 'Level Jabatan': ['LEVEL', 'LEVEL JABATAN', 'BOD LEVEL', 'BOD'],
@@ -442,37 +459,24 @@ else:
                 'Bagian': ['BAGIAN', 'DEPARTMENT', 'DEPT'],
                 'Keterangan': ['KETERANGAN', 'REMARKS', 'NOTE']
             }
-            
-            display_cols = [pn_col, nama_col, 'STATUS']
-            
+            display_cols = [pn_col, nama_col, jabatan_col, 'STATUS']
             for display_name, col_variations in display_cols_mapping.items():
                 matching_col = next((col for col in org_unit_df.columns if col.upper() in col_variations), None)
-                if matching_col:
+                if matching_col and matching_col not in display_cols:
                     display_cols.append(matching_col)
-            
-            # Filter kolom yang ada
             available_display_cols = [col for col in display_cols if col in org_unit_df.columns]
             display_org_df = org_unit_df[available_display_cols].copy()
-            
-            # Rename kolom untuk tampilan better
-            rename_map = {
-                pn_col: 'PN',
-                nama_col: 'NAMA'
-            }
+            rename_map = {pn_col: 'PN', nama_col: 'NAMA', jabatan_col: 'JABATAN'}
             display_org_df = display_org_df.rename(columns=rename_map)
-            
-            # Tambahkan conditional formatting info
             st.dataframe(
                 display_org_df,
                 width='stretch',
                 hide_index=True,
                 use_container_width=True
             )
-            
-            # Highlight vacant positions
-            st.info("💡 **Indikator:**\n- 🟢 TERISI = Posisi sudah ada yang mengisi (ada PN dan Nama)\n- 🔴 VACANT = Posisi masih kosong (PN atau Nama kosong)")
+            st.info("💡 **Indikator:**\n- 🟢 TERISI = Posisi sudah ada yang mengisi (ada PN dan Nama)\n- 🔴 VACANT = Posisi kosong (PN/Nama kosong)\n- 🔴 VACANT (DB) = Jabatan terdaftar di database vacant")
         else:
-            st.warning("⚠️ Struktur file tidak sesuai. File harus memiliki kolom PN/Personel Number dan NAMA")
+            st.warning("⚠️ Struktur file tidak sesuai. File harus memiliki kolom PN/Personel Number, NAMA, dan JABATAN")
     else:
         st.warning("⚠️ File struktur organisasi harus memiliki kolom 'Unit'")
 
