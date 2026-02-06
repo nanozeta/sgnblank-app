@@ -185,8 +185,8 @@ else:
     
     st.divider()
     
-    # Rekap Gender dan Usia
-    st.subheader("👥 Rekap Gender dan Usia")
+    # Demografi Karyawan
+    st.subheader("👥 Demografi Karyawan")
 
     # Hitung jumlah berdasarkan gender (toleransi untuk 'M', 'F', 'Male', 'Female')
     if 'Gender Key' in df_filtered.columns:
@@ -196,12 +196,28 @@ else:
         other_gender = int(len(gender_series) - male_count - female_count)
     else:
         male_count = female_count = other_gender = 0
+    # Hitung karyawan dengan disabilitas (Fisik, Sensorik, Mental)
+    disability_count = 0
+    disability_types = []
+    for col in df_filtered.columns:
+        if 'disabilitas' in col.lower() or 'disability' in col.lower():
+            disability_types.append(col)
+    
+    if disability_types:
+        for col in disability_types:
+            col_series = df_filtered[col].fillna('').astype(str).str.strip().str.lower()
+            disability_count += ((col_series != '') & (col_series != 'nan') & (col_series != 'tidak ada')).sum()
+        disability_count = int(disability_count)
+    else:
+        disability_count = 0
 
     gcol1, gcol2, gcol3 = st.columns(3)
     with gcol1:
         st.metric("👨 Male", male_count)
     with gcol2:
         st.metric("👩 Female", female_count)
+    with gcol3:
+        st.metric("♿ Disabilitas", disability_count)
 
     # Hitung rekap usia
     if 'Age of employee' in df_filtered.columns:
