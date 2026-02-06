@@ -252,6 +252,9 @@ else:
         })
 
         st.dataframe(
+        col_upload, col_update_time = st.columns([4, 1])
+        with col_upload:
+            st.subheader("Unggah File Baru")
             display_df,
             width='stretch',
             hide_index=True,
@@ -275,7 +278,17 @@ else:
                 ),
                 text=summary_df['Jumlah'],
                 textposition='auto',
-            )
+                        # Preview data dari file yang diupload
+                        st.write("Upload file Excel berisi struktur organisasi (PN, Nama, Jabatan, Bagian, dll)")
+                        last_update_raw = get_last_update_time()
+                        try:
+                            dt = datetime.strptime(last_update_raw, "%d-%m-%Y %H:%M:%S")
+                            last_update_fmt = dt.strftime("%d/%m/%y %H:%M")
+                        except Exception:
+                            last_update_fmt = last_update_raw
+                        st.caption(f"⏰ {last_update_fmt}")
+        
+                        st.write("**Preview Data Uploaded File:**")
         ])
         
         fig.update_layout(
@@ -475,15 +488,7 @@ else:
 st.divider()
 st.header("📥 Kelola Database")
 
-# Tampilkan waktu last update
-st.subheader("📅 Status Last Update")
-last_update = get_last_update_time()
-col_status, col_refresh_time = st.columns([2, 1])
-with col_status:
-    st.info(f"⏰ Terakhir di-update: **{last_update}**")
-with col_refresh_time:
-    if st.button("🔄 Refresh Info", use_container_width=True, key="refresh_time_btn"):
-        st.rerun()
+# (status last update ditampilkan di sebelah subheader upload file)
 
 st.divider()
 
