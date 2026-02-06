@@ -47,6 +47,19 @@ def load_all_sheets(url):
     except Exception as e:
         return None, str(e)
 
+# Get sheet names dari Excel file
+@st.cache_data(ttl=3600)
+def get_sheet_names(url):
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            xls = pd.ExcelFile(BytesIO(response.content))
+            return xls.sheet_names, None
+        else:
+            return None, f"Error: Status code {response.status_code}"
+    except Exception as e:
+        return None, str(e)
+
 # Push file ke GitHub
 def push_to_github(file_path, commit_message="Update database"):
     try:
@@ -98,6 +111,31 @@ df, error = load_excel_data(DEFAULT_URL)
 if error:
     st.error(f"❌ Gagal memuat data: {error}")
 else:
+    # Section pilih sheet
+    st.divider()
+    st.subheader("📊 Pilih Data Sheet")
+    
+    # Get available sheets
+    sheet_names, sheet_error = get_sheet_names(DEFAULT_URL)
+    
+    if sheet_error or not sheet_names:
+        st.warning("⚠️ Hanya ada 1 sheet atau file tidak dapat dibaca")
+        selected_sheet = 0
+    else:
+        selected_sheet = st.selectbox(
+            "Pilih Sheet Data:",
+            options=range(len(sheet_names)),
+            format_func=lambda x: sheet_names[x],
+            index=0,
+            help="Pilih sheet yang ingin ditampilkan"
+        )
+        # Reload data sesuai sheet yang dipilih
+        df, error = load_excel_data(DEFAULT_URL, sheet_name=selected_sheet)
+        if error:
+            st.error(f"❌ Gagal memuat sheet: {error}")
+        else:
+            st.success(f"✅ Data dari sheet '{sheet_names[selected_sheet]}' berhasil dimuat")
+    
     # Dropdown Unit Kerja
     st.divider()
     st.subheader("🏢 Pilih Unit Kerja")
